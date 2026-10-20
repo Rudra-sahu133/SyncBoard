@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import CanvasBoard from './components/CanvasBoard.jsx'
 import Toolbar from './components/Toolbar.jsx'
 import Icon from './components/Icon.jsx'
+import socket from './lib/socket.js'
 import './App.css'
 
 function App() {
@@ -10,6 +11,27 @@ function App() {
   const [size, setSize] = useState(4)
   const [clearVersion, setClearVersion] = useState(0)
   const [notice, setNotice] = useState('')
+  const [connectionStatus, setConnectionStatus] = useState(socket.connected ? 'connected' : 'connecting')
+
+  useEffect(() => {
+    const handleConnect = () => setConnectionStatus('connected')
+    const handleDisconnect = () => setConnectionStatus('disconnected')
+    const handleConnectError = () => setConnectionStatus('disconnected')
+
+    socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
+    socket.on('connect_error', handleConnectError)
+
+    if (socket.connected) handleConnect()
+    else socket.connect()
+
+    return () => {
+      socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
+      socket.off('connect_error', handleConnectError)
+      socket.disconnect()
+    }
+  }, [])
 
   function showShareNotice() {
     setNotice('Sharing will be available when collaboration is added.')
@@ -30,7 +52,9 @@ function App() {
         </div>
 
         <div className="topbar-actions">
-          <span className="saved-indicator"><span className="saved-dot" />Ready to draw</span>
+          <span className={`saved-indicator connection-${connectionStatus}`} role="status">
+            <span className="saved-dot" />{connectionStatus === 'connected' ? 'Live' : connectionStatus === 'connecting' ? 'Connecting' : 'Offline'}
+          </span>
           <button className="share-button" type="button" onClick={showShareNotice}>
             <Icon name="share" /> <span>Share</span>
           </button>

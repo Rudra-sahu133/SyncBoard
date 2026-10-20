@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import socket from '../lib/socket.js'
 
 function drawStroke(context, stroke, width, height) {
   const points = stroke.points
@@ -32,6 +33,8 @@ function CanvasBoard({ tool, color, size, clearVersion }) {
   const canvasRef = useRef(null)
   const strokesRef = useRef([])
   const activeStrokeRef = useRef(null)
+  const strokeSequenceRef = useRef(0)
+  const previousClearVersionRef = useRef(clearVersion)
   const settingsRef = useRef({ tool, color, size })
   const renderRef = useRef(() => {})
 
@@ -77,10 +80,58 @@ function CanvasBoard({ tool, color, size, clearVersion }) {
   }, [])
 
   useEffect(() => {
+    if (previousClearVersionRef.current === clearVersion) return
+    previousClearVersionRef.current = clearVersion
     strokesRef.current = []
     activeStrokeRef.current = null
     renderRef.current()
+    if (socket.connected) socket.emit('board:clear')
   }, [clearVersion])
+
+  useEffect(() => {
+    function handleRemoteStrokeStart(message) {
+      if (!message || message.senderId === socket.id || !message.id) return
+      if (!['pen', 'eraser'].includes(message.tool) || !Array.isArray(message.points)) return
+      if (strokesRef.current.some((stroke) => stroke.id === message.id)) return
+
+      const { senderId: _senderId, ...stroke } = message
+      strokesRef.current.push({ ...stroke, points: [...stroke.points] })
+      renderRef.current()
+    }
+
+    function handleRemoteStrokePoints(message) {
+      if (!message || message.senderId === socket.id || !Array.isArray(message.points)) return
+      const stroke = strokesRef.current.find((item) => item.id === message.id)
+      if (!stroke) return
+      stroke.points.push(...message.points)
+      renderRef.current()
+    }
+
+    function handleRemoteStrokeEnd(message) {
+      if (!message || message.senderId === socket.id) return
+      const stroke = strokesRef.current.find((item) => item.id === message.id)
+      if (stroke) stroke.complete = true
+    }
+
+    function handleRemoteClear(message) {
+      if (message?.senderId === socket.id) return
+      strokesRef.current = []
+      activeStrokeRef.current = null
+      renderRef.current()
+    }
+
+    socket.on('board:stroke:start', handleRemoteStrokeStart)
+    socket.on('board:stroke:points', handleRemoteStrokePoints)
+    socket.on('board:stroke:end', handleRemoteStrokeEnd)
+    socket.on('board:clear', handleRemoteClear)
+
+    return () => {
+      socket.off('board:stroke:start', handleRemoteStrokeStart)
+      socket.off('board:stroke:points', handleRemoteStrokePoints)
+      socket.off('board:stroke:end', handleRemoteStrokeEnd)
+      socket.off('board:clear', handleRemoteClear)
+    }
+  }, [])
 
   function getPoint(event) {
     const bounds = canvasRef.current.getBoundingClientRect()
@@ -94,28 +145,49 @@ function CanvasBoard({ tool, color, size, clearVersion }) {
     if (event.button !== 0) return
     event.preventDefault()
     const settings = settingsRef.current
+    const point = getPoint(event)
     const stroke = {
+      id: `${socket.id ?? 'offline'}-${++strokeSequenceRef.current}`,
       tool: settings.tool,
       color: settings.color,
       size: settings.size,
-      points: [getPoint(event)],
+      points: [point],
+      synced: socket.connected,
     }
     strokesRef.current.push(stroke)
     activeStrokeRef.current = stroke
     canvasRef.current.setPointerCapture(event.pointerId)
+    if (stroke.synced) {
+      socket.emit('board:stroke:start', {
+        id: stroke.id,
+        tool: stroke.tool,
+        color: stroke.color,
+        size: stroke.size,
+        points: [point],
+      })
+    }
     renderRef.current()
   }
 
   function continueStroke(event) {
     const stroke = activeStrokeRef.current
     if (!stroke) return
-    stroke.points.push(getPoint(event))
+    const point = getPoint(event)
+    stroke.points.push(point)
+    if (stroke.synced && socket.connected) {
+      socket.emit('board:stroke:points', { id: stroke.id, points: [point] })
+    }
     renderRef.current()
   }
 
   function finishStroke(event) {
-    if (!activeStrokeRef.current) return
+    const stroke = activeStrokeRef.current
+    if (!stroke) return
     activeStrokeRef.current = null
+    stroke.complete = true
+    if (stroke.synced && socket.connected) {
+      socket.emit('board:stroke:end', { id: stroke.id })
+    }
     if (canvasRef.current.hasPointerCapture(event.pointerId)) {
       canvasRef.current.releasePointerCapture(event.pointerId)
     }

@@ -12,6 +12,8 @@
 .topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 20px; }
 .saved-indicator { display: inline-flex; align-items: center; gap: 7px; color: #83879a; font-size: 11px; }
 .saved-dot { width: 7px; height: 7px; border-radius: 50%; background: #3eb891; box-shadow: 0 0 0 3px #3eb8911c; }
+.connection-connecting .saved-dot { background: #e3a538; box-shadow: 0 0 0 3px #e3a53820; }
+.connection-disconnected .saved-dot { background: #e36c76; box-shadow: 0 0 0 3px #e36c7620; }
 .share-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 9px; color: #fff; background: #5549dd; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; box-shadow: 0 3px 8px #5549dd24; transition: background 140ms ease, transform 140ms ease; }
 .share-button:hover { background: #463ac9; transform: translateY(-1px); }
 .share-button:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #9d96ff; outline-offset: 2px; }
